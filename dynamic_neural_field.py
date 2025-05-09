@@ -17,7 +17,7 @@ import logging
 
 logging.basicConfig(level=logging.INFO)
 
-S2IP = os.environ.get("S2_IP", "192.168.2.33")
+S2IP = os.environ.get("S2_IP", "192.168.2.52")
 STM_IP = os.environ.get("STM_IP48", "192.168.4.2")
 
 EXPERIMENT_BACKEND_TYPE = os.environ.get("PYS2_EXPERIMENT_BACKEND", "spinnman2")
@@ -56,7 +56,7 @@ field_size = (W, H)  # e.g., 50x50 grid
 u = np.zeros(field_size)  # initial activity
 
 kernel_size = 3
-kernel = gaussian_kernel(size=kernel_size*2 + 1, sigma_exc=1.5, sigma_inh=2.5)
+kernel = gaussian_kernel(size=kernel_size*2 + 1, sigma_exc=1., sigma_inh=2.5)
 
 figure = plt.figure()
 plt.imshow(kernel)
@@ -73,7 +73,7 @@ for idx in range(W*H):
             if target_idx >= W*H:
                 target_idx = target_idx - W*H
             
-            weights[idx, target_idx] = np.round(kernel[j+kernel_size,k+kernel_size]/0.5*6)
+            weights[idx, target_idx] = np.round(kernel[j+kernel_size,k+kernel_size]/0.5*3)
             # print(idx,target_idx, weights[idx,target_idx])
 
 figure = plt.figure()
@@ -84,23 +84,36 @@ plt.show()
 
 timesteps = 400
 # # # create stimulus population with 2 spike sources
-input_spikes = {k: range(k,min(k+k,timesteps)) for k in range(timesteps-1)}
+input_spikes = {k: list(range(k,min(k+k,timesteps))) for k in range(timesteps-1)}
 
 stim = snn.Population(size=H*W, neuron_model="spike_list", params=input_spikes, name="stim")
 stim.set_max_atoms_per_core(100)
 
 # # create LIF population with 1 neuron
+# neuron_params = {
+#     "threshold": 5.0,
+#     "alpha_decay": 0.9,
+#     "i_offset": 0.0,
+#     "v_init": 0.0,
+#     "v_reset": 0.0,  # only used for reset="reset_to_v_reset"
+#     "reset": "reset_to_v_reset",  # "reset_by_subtraction" or "reset_to_v_reset"
+# }
+
 neuron_params = {
-    "threshold": 5.0,
-    "alpha_decay": 0.9,
+    "threshold": 10.0,
+    "alpha_decay": 0.8,
     "i_offset": 0.0,
     "v_init": 0.0,
-    "v_reset": 0.0,  # only used for reset="reset_to_v_reset"
-    "reset": "reset_to_v_reset",  # "reset_by_subtraction" or "reset_to_v_reset"
+    "v_reset": -0.2,  # only used for reset="reset_to_v_reset"
+    "reset": "reset_by_subtraction",  # "reset_by_subtraction" or "reset_to_v_reset"
+    "exc_decay": 0.5,
+    "inh_decay": 0.2,
+    "t_refrac": 0,
 }
 
+
 inh_params = {
-    "threshold": 2.0,
+    "threshold": 5.0,
     "alpha_decay": 1,
     "i_offset": 3.0,
     "v_init": 0.0,
@@ -108,7 +121,7 @@ inh_params = {
     "reset": "reset_to_v_reset"
 }
 
-pop1 = snn.Population(size=H*W, neuron_model="lif", params=neuron_params, name="pop1", record=["spikes"])
+pop1 = snn.Population(size=H*W, neuron_model="lif_curr_exp", params=neuron_params, name="pop1", record=["spikes"])
 global_inh = snn.Population(size=1, neuron_model="lif", params=inh_params, name="global_inh", record=["spikes"])
 
 # Make an approximate estimate of the max neurons per core you can have with this connectivity
@@ -151,9 +164,11 @@ with open("indices_times","w+") as file:
     for idx, t in zip(indices,times):
         file.write(f"{idx}, {t}\n")
 tmp = []
-input_spikes_indices = np.array([tmp.extend(idx for k in range(len(spikes))) for idx,spikes in input_spikes.items()]).flatten()
-tmp = []
-input_spikes_times = np.array(tmp.extend(list(input_spikes.values()))).flatten()
+input_spikes_times = []
+input_spikes_indices = []
+for idx, spikes in input_spikes.items():
+    input_spikes_indices.extend([idx for _ in range(len(spikes))])
+    input_spikes_times.extend(spikes)
 print(input_spikes_times)
 # np.savez("input_spikes.npz", indices=input_spikes_indices,times=input_spikes_times)
 with open("input_spikes","w+") as file:
