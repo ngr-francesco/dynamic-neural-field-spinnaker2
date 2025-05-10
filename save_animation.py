@@ -3,7 +3,7 @@ import matplotlib.pyplot as plt
 import matplotlib.animation as animation
 
 # Load frames
-frames = np.load("frames.npy")  # shape: (num_frames, H, W)
+frames = np.load("data/frames.npy")  # shape: (num_frames, H, W)
 assert frames.ndim == 3, "frames.npy must have shape (frames, height, width)"
 
 # Consistent color scaling
@@ -23,5 +23,5 @@ def update(i):
 ani = animation.FuncAnimation(fig, update, frames=len(frames), interval=20, blit=True)
 
 # Save GIF
-ani.save("dnf_activity_fixed_spike_size.gif", writer="pillow", fps=60)
+ani.save("plots/dnf_activity_fixed_spike_size.gif", writer="pillow", fps=60)
 print("Saved GIF to dnf_activity.gif")

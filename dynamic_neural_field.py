@@ -40,31 +40,32 @@ def spike_frame_accum(timesteps_per_frame, n_neurons, indices, times, t_max):
     return frames
 
 
-def gaussian_kernel(size, sigma_exc, sigma_inh, weight_exc=1.0, weight_inh=0.5):
+def gaussian_kernel(size, sigma_exc, weight_exc=1.0):
     ax = np.arange(-size // 2 + 1., size // 2 + 1.)
     xx, yy = np.meshgrid(ax, ax)
     dist_sq = xx**2 + yy**2
 
     gauss_exc = weight_exc * np.exp(-dist_sq / (2 * sigma_exc**2))
-    gauss_inh = weight_inh * np.exp(-dist_sq / (2 * sigma_inh**2))
     
     kernel = gauss_exc - 0.4
     return kernel
 
+# Size of the neural field
 W, H = 20, 20
 field_size = (W, H)  # e.g., 50x50 grid
 u = np.zeros(field_size)  # initial activity
 
 kernel_size = 3
-kernel = gaussian_kernel(size=kernel_size*2 + 1, sigma_exc=1., sigma_inh=2.5)
+kernel = gaussian_kernel(size=kernel_size*2 + 1, sigma_exc=1.)
 
+# Show the spatial distribution of weights in the kernel
 figure = plt.figure()
 plt.imshow(kernel)
-plt.savefig("dnf-kernel.png")
+plt.savefig("plots/dnf-kernel.png")
 plt.show()
 
+# Create the weight matrix according to the gaussian kernel
 weights = np.zeros((W*H,W*H))
-
 for idx in range(W*H):
     print(f"{idx+1}/{W*H}")
     for k in range(-kernel_size,kernel_size+1):
@@ -76,33 +77,29 @@ for idx in range(W*H):
             weights[idx, target_idx] = np.round(kernel[j+kernel_size,k+kernel_size]/0.5*3)
             # print(idx,target_idx, weights[idx,target_idx])
 
+# Plot the entire weight matrix
 figure = plt.figure()
 plt.imshow(weights, interpolation='none')
 plt.colorbar(label='Connection strength')
-plt.savefig("dnf.png")
+plt.savefig("plots/dnf.png")
 plt.show()
 
+# # # Create some input spike patterns (a bit random)
 timesteps = 400
-# # # create stimulus population with 2 spike sources
-
 input_spikes_incremental = {k: list(range(k,min(k+k,timesteps))) for k in range(timesteps-1)}
 input_spikes_fixed = {k: list(range(k,min(k+5,timesteps))) for k in range(timesteps-1)}
 
-input_spikes = input_spikes_fixed
+# Just for conveniency, you can choose which one of the above you want to use
+input_spikes = input_spikes_incremental
 
+# Instantiate the spike list that will send the input spikes to the population
 stim = snn.Population(size=H*W, neuron_model="spike_list", params=input_spikes, name="stim")
+
+# This number can be tweaked to maximize the number of neurons per core, if necessary
 stim.set_max_atoms_per_core(100)
 
-# # create LIF population with 1 neuron
-# neuron_params = {
-#     "threshold": 5.0,
-#     "alpha_decay": 0.9,
-#     "i_offset": 0.0,
-#     "v_init": 0.0,
-#     "v_reset": 0.0,  # only used for reset="reset_to_v_reset"
-#     "reset": "reset_to_v_reset",  # "reset_by_subtraction" or "reset_to_v_reset"
-# }
 
+# Parameters for a LIF neuron with exponential synapses
 neuron_params = {
     "threshold": 10.0,
     "alpha_decay": 0.8,
@@ -115,7 +112,7 @@ neuron_params = {
     "t_refrac": 0,
 }
 
-
+# Inhibitory neurons with a bias current that forces them to spike regularly
 inh_params = {
     "threshold": 5.0,
     "alpha_decay": 1,
@@ -125,10 +122,13 @@ inh_params = {
     "reset": "reset_to_v_reset"
 }
 
+# Initialize the neural field 
 pop1 = snn.Population(size=H*W, neuron_model="lif_curr_exp", params=neuron_params, name="pop1", record=["spikes"])
+
+# Initialize the global inhibitory population
 global_inh = snn.Population(size=1, neuron_model="lif", params=inh_params, name="global_inh", record=["spikes"])
 
-# Make an approximate estimate of the max neurons per core you can have with this connectivity
+# Can be played with for optimizing number of cores used
 neurons_per_core = int(30)
 pop1.set_max_atoms_per_core(neurons_per_core)
 print(f"Setting max neurons per core to {neurons_per_core}")
@@ -140,12 +140,16 @@ print(f"Setting max neurons per core to {neurons_per_core}")
 # #  - weight: integer in range [-15, 15]
 # #  - delay: integer in range [0, 7]. Actual delay on the hardware is: delay+1
 
-connections = sparse_connection_list_from_dense_weights(weights, 0)
-print(connections[0])
 
+# Define the connections:
+# First input connections (weight value is random, can be tuned)
 input_conns = snn.Projection(pre=stim, post=pop1, connections = [[k,k,5.0,0] for k in range(H*W)])
+
+# Recurrent connections from the weight matrix we calculated before
+connections = sparse_connection_list_from_dense_weights(weights, 0)
 proj = snn.Projection(pre=pop1, post=pop1, connections=connections)
 
+# Inhibitory connections
 inh_conns = snn.Projection(pre=global_inh, post=pop1, connections = [[0,k,-4.0,0] for k in range(H*W)])
 
 # # create a network and add population and projections
@@ -157,14 +161,14 @@ hw = hardware.SpiNNaker2Chip(experiment_backend_type=ExperimentBackendType(EXPER
                                     eth_ip=S2IP)
 hw.run(net, timesteps)
 
-# # get results and plot
+# # get results and plot --------- From here on: unrelated to spinnaker
 spike_times = pop1.get_spikes()
 
 
 # Raster plot variables
 indices, times = helpers.spike_times_dict_to_arrays(spike_times)
-# np.savez("out_spikes.npz", indices=indices, times=times)
-with open("indices_times","w+") as file:
+# np.savez("data/out_spikes.npz", indices=indices, times=times)
+with open("data/indices_times","w+") as file:
     for idx, t in zip(indices,times):
         file.write(f"{idx}, {t}\n")
 tmp = []
@@ -174,8 +178,8 @@ for idx, spikes in input_spikes.items():
     input_spikes_indices.extend([idx for _ in range(len(spikes))])
     input_spikes_times.extend(spikes)
 print(input_spikes_times)
-# np.savez("input_spikes.npz", indices=input_spikes_indices,times=input_spikes_times)
-with open("input_spikes","w+") as file:
+# np.savez("data/input_spikes.npz", indices=input_spikes_indices,times=input_spikes_times)
+with open("data/input_spikes","w+") as file:
     for idx, t in zip(input_spikes_indices,input_spikes_times):
         file.write(f"{idx}, {t}\n")
 
@@ -183,20 +187,20 @@ if plot_raster:
     figure = plt.figure()
     plt.plot(times, indices, "|", ms=2)
     plt.plot(input_spikes_indices, input_spikes_times, '|', ms=2, alpha=0.5)
-    plt.savefig("dnf_raster.png")
+    plt.savefig("plots/dnf_raster.png")
     plt.show()
 
 # Generate frames for the 2d animation
 frames = spike_frame_accum(5,W*H, indices, times, timesteps)
 frames = frames.reshape((frames.shape[0],W,H))
 frame_idx = 0
-np.save("frames.npy", frames)
+np.save("data/frames.npy", frames)
 if plot_activity:
     print("Plotting animation... (Ctrl+C to stop)")
     figure = plt.figure()
     while True:
         plt.imshow(frames[frame_idx])
-        plt.savefig("dnf_activity.png")
+        plt.savefig("plot/dnf_activity.png")
         plt.show()
         print(frames[frame_idx])
         frame_idx += 1

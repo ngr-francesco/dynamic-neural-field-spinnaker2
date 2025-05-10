@@ -2,12 +2,12 @@ import matplotlib.pyplot as plt
 import numpy as np
 import time
 
-frames = np.load("frames.npy")
+frames = np.load("data/frames.npy")
 figure = plt.figure()
 frame_idx = 0
 while True:
     plt.imshow(frames[frame_idx])
-    plt.savefig("dnf_activity.png")
+    plt.savefig("plots/dnf_activity.png")
     plt.show()
     print(frames[frame_idx])
     frame_idx += 1
