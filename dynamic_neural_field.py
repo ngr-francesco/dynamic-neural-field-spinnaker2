@@ -84,7 +84,11 @@ plt.show()
 
 timesteps = 400
 # # # create stimulus population with 2 spike sources
-input_spikes = {k: list(range(k,min(k+k,timesteps))) for k in range(timesteps-1)}
+
+input_spikes_incremental = {k: list(range(k,min(k+k,timesteps))) for k in range(timesteps-1)}
+input_spikes_fixed = {k: list(range(k,min(k+5,timesteps))) for k in range(timesteps-1)}
+
+input_spikes = input_spikes_fixed
 
 stim = snn.Population(size=H*W, neuron_model="spike_list", params=input_spikes, name="stim")
 stim.set_max_atoms_per_core(100)
